@@ -1,2 +1,1 @@
-import Dashboard from'@/components/Dashboard';import{createClient}from'@/lib/supabase/server';import{redirect}from'next/navigation';
-export default async function Page(){if(!process.env.NEXT_PUBLIC_SUPABASE_URL)return <Dashboard role="parent" name="Demo parent" demo/>;const supabase=await createClient();const{data:{user}}=await supabase.auth.getUser();if(!user)redirect('/login');const{data:profile}=await supabase.from('profiles').select('full_name,role').eq('id',user.id).single();return <Dashboard role={profile?.role||'parent'} name={profile?.full_name||'RaRa member'}/>}
+import DummyDashboard from'@/components/DummyDashboard';export default function Page(){return <DummyDashboard/>}
