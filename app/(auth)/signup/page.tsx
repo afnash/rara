@@ -1,0 +1,1 @@
+import AuthForm from'@/components/AuthForm';export default async function Signup({searchParams}:{searchParams:Promise<{role?:string}>}){const p=await searchParams;return <AuthForm mode="signup" defaultRole={p.role==='sitter'?'sitter':'parent'}/>}

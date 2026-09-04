@@ -1,0 +1,13 @@
+# dependencies and builds
+node_modules/
+.next/
+out/
+# local secrets
+.env
+.env.local
+.env.*.local
+# tooling
+.vercel/
+*.tsbuildinfo
+npm-debug.log*
+.DS_Store
