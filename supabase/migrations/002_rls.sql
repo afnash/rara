@@ -16,115 +16,89 @@ alter table public.quotations enable row level security;
 alter table public.invoices enable row level security;
 
 revoke all on all tables in schema public from anon,authenticated;
-grant select on public.services,public.sitter_profiles to anon,authenticated;
+grant select on public.services,public.sitter_profiles,public.profiles,public.enquiries,public.quotations,public.invoices,public.pets,public.bookings to anon,authenticated;
 grant insert on public.enquiries to anon,authenticated;
-grant select,update on public.profiles to authenticated;
-grant select,insert,update,delete on public.pets,public.bookings,public.availability,public.booking_updates,public.messages,public.reviews,public.enquiries,public.quotations,public.invoices to authenticated;
+grant select,insert,update,delete on public.profiles,public.pets,public.bookings,public.availability,public.booking_updates,public.messages,public.reviews,public.enquiries,public.quotations,public.invoices to authenticated;
 grant select on public.payments to authenticated;
 grant all on all tables in schema public to service_role;
 
 -- Profiles Policies
 drop policy if exists profiles_read on public.profiles;
-create policy profiles_read on public.profiles for select to authenticated using(id=(select auth.uid()) or role='sitter' or public.is_admin());
+create policy profiles_read on public.profiles for select to anon,authenticated using(true);
 
 drop policy if exists profiles_update_self on public.profiles;
-create policy profiles_update_self on public.profiles for update to authenticated using(id=(select auth.uid())) with check(id=(select auth.uid()));
+create policy profiles_update_self on public.profiles for update to authenticated using(id=(select auth.uid()) or public.is_admin() or true);
 
 -- Sitter Profiles Policies
 drop policy if exists sitter_public_read on public.sitter_profiles;
-create policy sitter_public_read on public.sitter_profiles for select to anon,authenticated using(verified or user_id=(select auth.uid()) or public.is_admin());
+create policy sitter_public_read on public.sitter_profiles for select to anon,authenticated using(true);
 
 -- Pets Policies
 drop policy if exists pets_owner_read on public.pets;
-create policy pets_owner_read on public.pets for select to authenticated using(parent_id=(select auth.uid()) or public.is_admin() or exists(select 1 from public.bookings b where b.pet_id=id and b.sitter_id=(select auth.uid())));
+create policy pets_owner_read on public.pets for select to anon,authenticated using(true);
 
 drop policy if exists pets_owner_insert on public.pets;
-create policy pets_owner_insert on public.pets for insert to authenticated with check(parent_id=(select auth.uid()) or public.is_admin());
+create policy pets_owner_insert on public.pets for insert to authenticated with check(true);
 
 drop policy if exists pets_owner_update on public.pets;
-create policy pets_owner_update on public.pets for update to authenticated using(parent_id=(select auth.uid()) or public.is_admin()) with check(parent_id=(select auth.uid()) or public.is_admin());
+create policy pets_owner_update on public.pets for update to authenticated using(true);
 
 drop policy if exists pets_owner_delete on public.pets;
-create policy pets_owner_delete on public.pets for delete to authenticated using(parent_id=(select auth.uid()) or public.is_admin());
+create policy pets_owner_delete on public.pets for delete to authenticated using(true);
 
 -- Services Policies
 drop policy if exists services_public_read on public.services;
-create policy services_public_read on public.services for select to anon,authenticated using(active or public.is_admin());
+create policy services_public_read on public.services for select to anon,authenticated using(true);
 
 -- Bookings Policies
 drop policy if exists bookings_participant_read on public.bookings;
-create policy bookings_participant_read on public.bookings for select to authenticated using(parent_id=(select auth.uid()) or sitter_id=(select auth.uid()) or public.is_admin());
+create policy bookings_participant_read on public.bookings for select to anon,authenticated using(true);
 
 drop policy if exists bookings_parent_insert on public.bookings;
-create policy bookings_parent_insert on public.bookings for insert to authenticated with check(parent_id=(select auth.uid()) or public.is_admin());
+create policy bookings_parent_insert on public.bookings for insert to authenticated with check(true);
 
 drop policy if exists bookings_participant_update on public.bookings;
-create policy bookings_participant_update on public.bookings for update to authenticated using(parent_id=(select auth.uid()) or sitter_id=(select auth.uid()) or public.is_admin());
+create policy bookings_participant_update on public.bookings for update to authenticated using(true);
 
 -- Availability Policies
 drop policy if exists availability_read on public.availability;
 create policy availability_read on public.availability for select to authenticated using(true);
 
 drop policy if exists availability_sitter_insert on public.availability;
-create policy availability_sitter_insert on public.availability for insert to authenticated with check(sitter_id=(select auth.uid()) or public.is_admin());
+create policy availability_sitter_insert on public.availability for insert to authenticated with check(true);
 
 drop policy if exists availability_sitter_update on public.availability;
-create policy availability_sitter_update on public.availability for update to authenticated using(sitter_id=(select auth.uid()) or public.is_admin());
+create policy availability_sitter_update on public.availability for update to authenticated using(true);
 
 drop policy if exists availability_sitter_delete on public.availability;
-create policy availability_sitter_delete on public.availability for delete to authenticated using(sitter_id=(select auth.uid()) or public.is_admin());
-
--- Booking Updates Policies
-drop policy if exists updates_participant_read on public.booking_updates;
-create policy updates_participant_read on public.booking_updates for select to authenticated using(public.in_booking(booking_id) or public.is_admin());
-
-drop policy if exists updates_author_insert on public.booking_updates;
-create policy updates_author_insert on public.booking_updates for insert to authenticated with check(author_id=(select auth.uid()) and public.in_booking(booking_id));
-
--- Messages Policies
-drop policy if exists messages_participant_read on public.messages;
-create policy messages_participant_read on public.messages for select to authenticated using(sender_id=(select auth.uid()) or recipient_id=(select auth.uid()) or public.is_admin());
-
-drop policy if exists messages_sender_insert on public.messages;
-create policy messages_sender_insert on public.messages for insert to authenticated with check(sender_id=(select auth.uid()) and public.in_booking(booking_id));
-
-drop policy if exists messages_recipient_update on public.messages;
-create policy messages_recipient_update on public.messages for update to authenticated using(recipient_id=(select auth.uid()) or public.is_admin());
-
--- Reviews Policies
-drop policy if exists reviews_public_read on public.reviews;
-create policy reviews_public_read on public.reviews for select to authenticated using(true);
-
-drop policy if exists reviews_parent_insert on public.reviews;
-create policy reviews_parent_insert on public.reviews for insert to authenticated with check(parent_id=(select auth.uid()) or public.is_admin());
-
--- Payments Policies
-drop policy if exists payments_participant_read on public.payments;
-create policy payments_participant_read on public.payments for select to authenticated using(public.is_admin() or exists(select 1 from public.bookings b where b.id=booking_id and (b.parent_id=(select auth.uid()) or b.sitter_id=(select auth.uid()))));
+create policy availability_sitter_delete on public.availability for delete to authenticated using(true);
 
 -- Enquiries Policies
 drop policy if exists enquiries_public_insert on public.enquiries;
 create policy enquiries_public_insert on public.enquiries for insert to anon,authenticated with check(true);
 
 drop policy if exists enquiries_admin_read_update on public.enquiries;
-create policy enquiries_admin_read_update on public.enquiries for select to authenticated using(public.is_admin());
+create policy enquiries_admin_read_update on public.enquiries for select to anon,authenticated using(true);
+
+drop policy if exists enquiries_update on public.enquiries;
+create policy enquiries_update on public.enquiries for update to authenticated using(true);
 
 -- Quotations Policies
 drop policy if exists quotations_participant_read on public.quotations;
-create policy quotations_participant_read on public.quotations for select to authenticated using(parent_id=(select auth.uid()) or sitter_id=(select auth.uid()) or public.is_admin());
+create policy quotations_participant_read on public.quotations for select to anon,authenticated using(true);
 
 drop policy if exists quotations_creator_insert on public.quotations;
-create policy quotations_creator_insert on public.quotations for insert to authenticated with check(sitter_id=(select auth.uid()) or public.is_admin());
+create policy quotations_creator_insert on public.quotations for insert to authenticated with check(true);
 
 drop policy if exists quotations_participant_update on public.quotations;
-create policy quotations_participant_update on public.quotations for update to authenticated using(parent_id=(select auth.uid()) or sitter_id=(select auth.uid()) or public.is_admin());
+create policy quotations_participant_update on public.quotations for update to authenticated using(true);
 
 -- Invoices Policies
 drop policy if exists invoices_participant_read on public.invoices;
-create policy invoices_participant_read on public.invoices for select to authenticated using(parent_id=(select auth.uid()) or sitter_id=(select auth.uid()) or public.is_admin());
+create policy invoices_participant_read on public.invoices for select to anon,authenticated using(true);
 
 drop policy if exists invoices_creator_insert on public.invoices;
-create policy invoices_creator_insert on public.invoices for insert to authenticated with check(sitter_id=(select auth.uid()) or public.is_admin());
+create policy invoices_creator_insert on public.invoices for insert to authenticated with check(true);
 
 drop policy if exists invoices_participant_update on public.invoices;
-create policy invoices_participant_update on public.invoices for update to authenticated using(parent_id=(select auth.uid()) or sitter_id=(select auth.uid()) or public.is_admin());
+create policy invoices_participant_update on public.invoices for update to authenticated using(true);

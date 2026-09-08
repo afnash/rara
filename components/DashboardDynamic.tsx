@@ -670,17 +670,28 @@ function SitterContent({
   onOpenQuote: (q: Quotation) => void;
   onOpenInvoice: (inv: Invoice) => void;
 }) {
+  const paidRevenue = invoices.filter((inv) => inv.status === 'paid').reduce((sum, inv) => sum + inv.totalAmount, 0);
+  const pendingRevenue = invoices.filter((inv) => inv.status === 'unpaid').reduce((sum, inv) => sum + inv.totalAmount, 0);
+
   if (tab === 'Care requests') {
     return (
       <div className="list">
-        <article className="request-row">
-          <PawPrint />
-          <div>
-            <b>Dog Walk request near PIN {pin} (0.8km away)</b>
-            <span>Tomorrow · 1 hour · Milo (Beagle)</span>
-          </div>
-          <i>Review & Quote</i>
-        </article>
+        {quotes.length ? (
+          quotes.map((q) => (
+            <article className="request-row" key={q.id}>
+              <PawPrint />
+              <div>
+                <b>{q.serviceName} near PIN {q.parentPin} ({q.distanceKm}km away)</b>
+                <span>Status: {q.status.toUpperCase()} · Valid: {q.validUntil}</span>
+              </div>
+              <button onClick={() => onOpenQuote(q)} style={{ padding: '6px 12px', background: '#00982d', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: '600' }}>
+                View & Manage
+              </button>
+            </article>
+          ))
+        ) : (
+          <Empty title="No active care requests" text="Care requests from nearby pet parents will appear here." />
+        )}
       </div>
     );
   }
@@ -689,8 +700,8 @@ function SitterContent({
     return (
       <QuotationsInvoicesList
         userRole="sitter"
-        quotes={quotes.filter((q) => q.sitterName.includes('Sam') || q.sitterName.includes('Sitter'))}
-        invoices={invoices.filter((inv) => inv.sitterName.includes('Sam') || inv.sitterName.includes('Sitter'))}
+        quotes={quotes}
+        invoices={invoices}
         onOpenQuote={onOpenQuote}
         onOpenInvoice={onOpenInvoice}
       />
@@ -698,10 +709,40 @@ function SitterContent({
   }
 
   if (tab === 'My schedule') return <Empty title="Availability calendar" text="Add available dates to receive nearby care requests." />;
-  if (tab === 'Earnings') return <Overview role="sitter" counts={[['This month', '$1,240'], ['Pending payouts', '$180'], ['Completed jobs', '24']]} />;
+  if (tab === 'Earnings') {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        <Overview
+          role="sitter"
+          counts={[
+            ['Gross Paid Revenue', `$${paidRevenue.toFixed(2)}`],
+            ['Pending Invoices', `$${pendingRevenue.toFixed(2)}`],
+            ['Active Quotes', String(quotes.length)],
+          ]}
+        />
+        <QuotationsInvoicesList
+          userRole="sitter"
+          quotes={quotes}
+          invoices={invoices}
+          onOpenQuote={onOpenQuote}
+          onOpenInvoice={onOpenInvoice}
+        />
+      </div>
+    );
+  }
+
   if (tab === 'Messages') return <Empty title="Sitter messages" text="Parent conversations will appear after accepting a request." />;
 
-  return <Overview role="sitter" counts={[['Nearby requests within 5km', '4'], ['Active Quotes', String(quotes.length)], ['Rating', '4.9']]} />;
+  return (
+    <Overview
+      role="sitter"
+      counts={[
+        ['Active Quotes (DB)', String(quotes.length)],
+        ['Issued Invoices (DB)', String(invoices.length)],
+        ['Paid Revenue', `$${paidRevenue.toFixed(2)}`],
+      ]}
+    />
+  );
 }
 
 /* =========================================================================
@@ -730,6 +771,32 @@ function AdminContent({
   onOpenInvoice: (inv: Invoice) => void;
   onConvertEnquiry: (enquiry: PublicEnquiry) => void;
 }) {
+  // Live computed metrics strictly from Supabase states
+  const totalParents = parents.length;
+  const totalSitters = sitters.length;
+  const verifiedSitters = sitters.filter((s) => s.verified).length;
+  const unverifiedSitters = sitters.filter((s) => !s.verified).length;
+  const totalUsers = totalParents + totalSitters;
+
+  const totalQuotes = quotes.length;
+  const acceptedQuotes = quotes.filter((q) => q.status === 'accepted').length;
+  const pendingQuotes = quotes.filter((q) => q.status === 'sent').length;
+
+  const totalInvoiced = invoices.reduce((sum, inv) => sum + inv.totalAmount, 0);
+  const paidRevenue = invoices.filter((inv) => inv.status === 'paid').reduce((sum, inv) => sum + inv.totalAmount, 0);
+  const unpaidInvoices = invoices.filter((inv) => inv.status === 'unpaid').reduce((sum, inv) => sum + inv.totalAmount, 0);
+
+  // Toggle Sitter verification in Supabase
+  async function toggleSitterApproval(sitterId: string, currentVerified: boolean) {
+    try {
+      const supabase = createClient();
+      await supabase.from('sitter_profiles').update({ verified: !currentVerified }).eq('id', sitterId);
+      location.reload();
+    } catch (err) {
+      console.warn('Failed to update sitter approval:', err);
+    }
+  }
+
   if (tab === 'Locality Hotspots (Map)') {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -836,14 +903,174 @@ function AdminContent({
     );
   }
 
-  const data: Record<string, [string, string][]> = {
-    Users: [['Pet parents', '612'], ['Active sitters', '230']],
-    'Sitter approvals': [['Awaiting review', '12'], ['Approved this week', '8']],
-    'All bookings': [['Active bookings', '86'], ['Completed this month', '326']],
-    Payments: [['Gross volume', '$18,420'], ['Pending payouts', '$3,280']],
-  };
+  if (tab === 'Users') {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        <Overview
+          role="admin"
+          counts={[
+            ['Total Platform Users', String(totalUsers)],
+            ['Registered Pet Parents', String(totalParents)],
+            ['Registered Sitters', String(totalSitters)],
+            ['Verified Sitters', String(verifiedSitters)],
+          ]}
+        />
+        <div style={{ background: '#fff', padding: '16px', borderRadius: '12px', border: '1px solid #e5e7eb' }}>
+          <h3 style={{ margin: '0 0 12px', fontSize: '16px', fontWeight: '700' }}>Platform User Directory</h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {parents.map((p) => (
+              <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 14px', background: '#f9fafb', borderRadius: '8px' }}>
+                <div>
+                  <b style={{ fontSize: '14px' }}>{p.name}</b>
+                  <span style={{ marginLeft: '10px', fontSize: '12px', color: '#6b7280' }}>Pet Parent · PIN {p.pin}</span>
+                </div>
+                <small style={{ color: '#9ca3af' }}>Registered {p.registeredDate}</small>
+              </div>
+            ))}
+            {sitters.map((s) => (
+              <div key={s.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 14px', background: '#f0fdf4', borderRadius: '8px' }}>
+                <div>
+                  <b style={{ fontSize: '14px' }}>{s.name}</b>
+                  <span style={{ marginLeft: '10px', fontSize: '12px', color: '#15803d' }}>Verified Sitter · PIN {s.pin} · ${s.hourlyRate}/hr</span>
+                </div>
+                <span style={{ fontSize: '12px', fontWeight: '700', color: s.verified ? '#16a34a' : '#d97706' }}>
+                  {s.verified ? 'APPROVED' : 'PENDING'}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
-  return <Overview role="admin" counts={data[tab] || [['Total users', '842'], ['Pending sitters', '12'], ['Monthly bookings', '326'], ['Total Invoiced', '$12,450']]} />;
+  if (tab === 'Sitter approvals') {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        <Overview
+          role="admin"
+          counts={[
+            ['Awaiting Approval', String(unverifiedSitters)],
+            ['Approved Sitters', String(verifiedSitters)],
+            ['Total Registered Sitters', String(totalSitters)],
+          ]}
+        />
+        <div style={{ background: '#fff', padding: '16px', borderRadius: '12px', border: '1px solid #e5e7eb' }}>
+          <h3 style={{ margin: '0 0 12px', fontSize: '16px', fontWeight: '700' }}>Sitter Approval Queue</h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {sitters.length ? (
+              sitters.map((s) => (
+                <div key={s.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', background: '#f9fafb', borderRadius: '8px', border: '1px solid #f3f4f6' }}>
+                  <div>
+                    <b style={{ fontSize: '15px' }}>{s.name}</b> <span style={{ fontSize: '12px', color: '#6b7280' }}>(PIN {s.pin} · {s.yearsExp} yrs exp)</span>
+                    <p style={{ margin: '4px 0 0', fontSize: '13px', color: '#4b5563' }}>{s.bio}</p>
+                  </div>
+                  <button
+                    onClick={() => toggleSitterApproval(s.id, s.verified)}
+                    style={{
+                      padding: '8px 14px',
+                      background: s.verified ? '#ef4444' : '#00982d',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '8px',
+                      fontWeight: '700',
+                      fontSize: '12px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {s.verified ? 'Revoke Approval' : 'Approve Sitter'}
+                  </button>
+                </div>
+              ))
+            ) : (
+              <Empty title="No sitters registered" text="Sitter applications will appear here." />
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (tab === 'All bookings') {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        <Overview
+          role="admin"
+          counts={[
+            ['Accepted Bookings', String(acceptedQuotes)],
+            ['Pending Quotes', String(pendingQuotes)],
+            ['Total Quotes Issued', String(totalQuotes)],
+          ]}
+        />
+        <QuotationsInvoicesList
+          userRole="admin"
+          quotes={quotes}
+          invoices={invoices}
+          onOpenQuote={onOpenQuote}
+          onOpenInvoice={onOpenInvoice}
+        />
+      </div>
+    );
+  }
+
+  if (tab === 'Payments') {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        <Overview
+          role="admin"
+          counts={[
+            ['Gross Volume (Paid)', `$${paidRevenue.toFixed(2)}`],
+            ['Unpaid Invoices', `$${unpaidInvoices.toFixed(2)}`],
+            ['Total Billed Invoices', `$${totalInvoiced.toFixed(2)}`],
+          ]}
+        />
+        <QuotationsInvoicesList
+          userRole="admin"
+          quotes={quotes}
+          invoices={invoices}
+          onOpenQuote={onOpenQuote}
+          onOpenInvoice={onOpenInvoice}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+      <Overview
+        role="admin"
+        counts={[
+          ['Pet Parents (DB)', String(totalParents)],
+          ['Active Sitters (DB)', String(totalSitters)],
+          ['Visitor Enquiries', String(enquiries.length)],
+          ['Gross Paid Volume', `$${paidRevenue.toFixed(2)}`],
+        ]}
+      />
+      <div style={{ background: '#fff', padding: '16px', borderRadius: '12px', border: '1px solid #e5e7eb' }}>
+        <h3 style={{ margin: '0 0 12px', fontSize: '16px', fontWeight: '700' }}>Recent Platform Activity</h3>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          {enquiries.slice(0, 3).map((e) => (
+            <div key={e.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 14px', background: '#f9fafb', borderRadius: '8px' }}>
+              <div>
+                <b>New Visitor Enquiry</b> from {e.name} (PIN {e.pin})
+                <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#6b7280' }}>Requested {e.serviceRequested} for {e.petType}</p>
+              </div>
+              <small style={{ color: '#9ca3af' }}>{new Date(e.createdAt).toLocaleDateString()}</small>
+            </div>
+          ))}
+          {quotes.slice(0, 3).map((q) => (
+            <div key={q.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 14px', background: '#f0fdf4', borderRadius: '8px' }}>
+              <div>
+                <b>Quotation Issued ({q.quoteNumber})</b> - ${q.totalAmount.toFixed(2)}
+                <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#16a34a' }}>For {q.parentName} · Status: {q.status.toUpperCase()}</p>
+              </div>
+              <small style={{ color: '#9ca3af' }}>{new Date(q.createdAt).toLocaleDateString()}</small>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 /* =========================================================================
