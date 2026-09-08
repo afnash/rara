@@ -383,9 +383,20 @@ export default function HotspotMap({
                       PIN {sitter.pin} · {sitter.coords.district}
                     </span>
                   </div>
-                  <span style={{ background: sitter.isWithin ? '#00982d' : '#9ca3af', color: 'white', fontSize: '11px', fontWeight: '700', padding: '2px 6px', borderRadius: '4px' }}>
-                    {sitter.distance} km
-                  </span>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
+                    <span style={{ background: sitter.isWithin ? '#00982d' : '#9ca3af', color: 'white', fontSize: '11px', fontWeight: '700', padding: '2px 6px', borderRadius: '4px' }}>
+                      {sitter.distance} km
+                    </span>
+                    {sitter.verified ? (
+                      <span style={{ background: '#dcfce7', color: '#15803d', fontSize: '10px', fontWeight: '700', padding: '2px 6px', borderRadius: '4px' }}>
+                        ✓ Admin Confirmed
+                      </span>
+                    ) : (
+                      <span style={{ background: '#fef3c7', color: '#b45309', fontSize: '10px', fontWeight: '700', padding: '2px 6px', borderRadius: '4px' }}>
+                        ⏳ Pending Confirmation
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px', fontSize: '12px' }}>
@@ -393,7 +404,7 @@ export default function HotspotMap({
                   <span style={{ color: '#f59e0b', fontWeight: '600' }}>⭐ {sitter.rating} ({sitter.yearsExp}y exp)</span>
                 </div>
 
-                {onRequestQuote && userRole === 'parent' && sitter.isWithin && (
+                {onRequestQuote && userRole === 'parent' && sitter.isWithin && sitter.verified && (
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
