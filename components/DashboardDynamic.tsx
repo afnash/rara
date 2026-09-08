@@ -29,11 +29,13 @@ import {
 import HotspotMap, { SitterSpot, ParentSpot } from './HotspotMap';
 import QuotationInvoiceModal, { Quotation, Invoice } from './QuotationInvoiceModal';
 import { PublicEnquiry } from './EnquiryForm';
+import { createClient } from '@/lib/supabase/client';
+
 
 type Role = 'parent' | 'sitter' | 'admin';
 
 type Pet = {
-  id: number;
+  id: string | number;
   type: string;
   name: string;
   dob: string;
@@ -41,13 +43,14 @@ type Pet = {
 };
 
 type Request = {
-  id: number;
+  id: string | number;
   from: string;
   to: string;
   type: string;
   status: string;
   pin?: string;
 };
+
 
 const NAV: Record<Role, string[]> = {
   parent: ['Overview', 'Nearby Sitters (5km Map)', 'My pets', 'Services', 'Quotations & Invoices', 'Bookings', 'Messages'],
@@ -57,163 +60,8 @@ const NAV: Record<Role, string[]> = {
 
 const ICONS = [Home, MapPin, PawPrint, FileText, FileText, CalendarDays, MessageSquare, Users];
 
-// Initial seed data
-const SEED_SITTERS: SitterSpot[] = [
-  {
-    id: 'sit_1',
-    name: 'Sam Sitter',
-    pin: '238201',
-    hourlyRate: 25,
-    rating: 4.9,
-    yearsExp: 4,
-    verified: true,
-    bio: 'Experienced dog walker & pet sitter in River Valley area.',
-    services: ['Dog walking', 'Pet daycare'],
-  },
-  {
-    id: 'sit_2',
-    name: 'Alyssa Tan',
-    pin: '168732',
-    hourlyRate: 30,
-    rating: 5.0,
-    yearsExp: 6,
-    verified: true,
-    bio: 'Certified veterinary nurse & home stayover sitter.',
-    services: ['Home stayover', 'Home boarding', 'Pet transport'],
-  },
-  {
-    id: 'sit_3',
-    name: 'David Chen',
-    pin: '098585',
-    hourlyRate: 28,
-    rating: 4.8,
-    yearsExp: 3,
-    verified: true,
-    bio: 'Cat specialist and active pet transport driver near Harbourfront.',
-    services: ['Pet transport', 'Cat daycare'],
-  },
-  {
-    id: 'sit_4',
-    name: 'Marcus Lim',
-    pin: '520101',
-    hourlyRate: 22,
-    rating: 4.7,
-    yearsExp: 2,
-    verified: true,
-    bio: 'Pet lover with spacious home daycare garden in Tampines.',
-    services: ['Home boarding', 'Dog walking'],
-  },
-];
-
-const SEED_PARENTS: ParentSpot[] = [
-  { id: 'par_1', name: 'Priya Parent', pin: '238163', petsCount: 2, registeredDate: '2026-01-10' },
-  { id: 'par_2', name: 'Rachel Wong', pin: '168800', petsCount: 1, registeredDate: '2026-02-15' },
-  { id: 'par_3', name: 'Kenneth Lee', pin: '098590', petsCount: 1, registeredDate: '2026-03-01' },
-];
-
-const SEED_QUOTES: Quotation[] = [
-  {
-    id: 'q_1',
-    quoteNumber: 'QUO-2026-001',
-    parentName: 'Priya Parent',
-    parentEmail: 'parent@rara.test',
-    parentPin: '238163',
-    sitterName: 'Sam Sitter',
-    serviceName: 'Dog Walking (1 hour) + Locality Visit',
-    distanceKm: 0.8,
-    baseAmount: 35.0,
-    travelFee: 5.0,
-    taxAmount: 3.2,
-    discountAmount: 0,
-    totalAmount: 43.2,
-    notes: 'Includes 5km locality travel coverage and live photo updates.',
-    validUntil: '2026-09-20',
-    status: 'sent',
-    createdAt: '2026-09-07T10:00:00Z',
-  },
-  {
-    id: 'q_2',
-    quoteNumber: 'QUO-2026-002',
-    parentName: 'Rachel Wong',
-    parentEmail: 'rachel@example.com',
-    parentPin: '168800',
-    sitterName: 'Alyssa Tan',
-    serviceName: 'Weekend Home Stayover (2 nights)',
-    distanceKm: 2.1,
-    baseAmount: 140.0,
-    travelFee: 10.0,
-    taxAmount: 12.0,
-    discountAmount: 0,
-    totalAmount: 162.0,
-    notes: '2 nights overnight care with 24/7 accompaniment.',
-    validUntil: '2026-09-18',
-    status: 'accepted',
-    createdAt: '2026-09-06T14:30:00Z',
-  },
-];
-
-const SEED_INVOICES: Invoice[] = [
-  {
-    id: 'inv_1',
-    invoiceNumber: 'INV-2026-001',
-    quoteNumber: 'QUO-2026-002',
-    parentName: 'Rachel Wong',
-    parentPin: '168800',
-    sitterName: 'Alyssa Tan',
-    serviceName: 'Weekend Home Stayover (2 nights)',
-    subtotal: 150.0,
-    taxAmount: 12.0,
-    totalAmount: 162.0,
-    status: 'paid',
-    dueDate: '2026-09-15',
-    paidAt: '2026-09-07T16:00:00Z',
-    paymentMethod: 'PayNow SG',
-    createdAt: '2026-09-06T15:00:00Z',
-  },
-  {
-    id: 'inv_2',
-    invoiceNumber: 'INV-2026-002',
-    parentName: 'Priya Parent',
-    parentPin: '238163',
-    sitterName: 'Sam Sitter',
-    serviceName: 'Pet Transport (River Valley to Vet Clinic)',
-    subtotal: 30.0,
-    taxAmount: 2.4,
-    totalAmount: 32.4,
-    status: 'unpaid',
-    dueDate: '2026-09-18',
-    createdAt: '2026-09-08T09:00:00Z',
-  },
-];
-
-const SEED_ENQUIRIES: PublicEnquiry[] = [
-  {
-    id: 'ENQ-10492',
-    name: 'Sarah Tan',
-    email: 'sarah.tan@example.com',
-    phone: '+65 9876 5432',
-    pin: '238190',
-    petType: 'Dog',
-    serviceRequested: 'Dog Walking',
-    message: 'Looking for daily 1-hour walks for my Beagle near River Valley PIN 238190.',
-    status: 'new',
-    createdAt: '2026-09-07T11:20:00Z',
-  },
-  {
-    id: 'ENQ-10493',
-    name: 'Jason Tay',
-    email: 'jason.t@example.com',
-    phone: '+65 9123 8899',
-    pin: '168740',
-    petType: 'Cat',
-    serviceRequested: 'Home Boarding',
-    message: 'Need boarding for 3 nights for 2 indoor cats in Tiong Bahru area.',
-    status: 'new',
-    createdAt: '2026-09-08T08:15:00Z',
-  },
-];
-
 export default function DashboardDynamic({
+
   role,
   name,
   pin,
@@ -225,12 +73,12 @@ export default function DashboardDynamic({
   const [tab, setTab] = useState('Overview');
   const [menu, setMenu] = useState(false);
 
-  // Storage states
-  const [quotes, setQuotes] = useStored<Quotation[]>('rara_quotations', SEED_QUOTES);
-  const [invoices, setInvoices] = useStored<Invoice[]>('rara_invoices', SEED_INVOICES);
-  const [enquiries, setEnquiries] = useStored<PublicEnquiry[]>('rara_public_enquiries', SEED_ENQUIRIES);
-  const [sitters] = useState<SitterSpot[]>(SEED_SITTERS);
-  const [parents] = useState<ParentSpot[]>(SEED_PARENTS);
+  // Supabase live states (initialized empty, populated strictly from Supabase DB)
+  const [quotes, setQuotes] = useState<Quotation[]>([]);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [enquiries, setEnquiries] = useState<PublicEnquiry[]>([]);
+  const [sitters, setSitters] = useState<SitterSpot[]>([]);
+  const [parents, setParents] = useState<ParentSpot[]>([]);
 
   // Modal active state
   const [activeModal, setActiveModal] = useState<{
@@ -238,26 +86,178 @@ export default function DashboardDynamic({
     item?: Quotation | Invoice | null;
   } | null>(null);
 
+  // Fetch live data strictly from Supabase tables
+  useEffect(() => {
+    async function loadSupabaseData() {
+      try {
+        const supabase = createClient();
+
+        // 1. Fetch Enquiries from Supabase
+        const { data: dbEnquiries } = await supabase
+          .from('enquiries')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (dbEnquiries) {
+          setEnquiries(
+            dbEnquiries.map((e: any) => ({
+              id: e.id,
+              name: e.name,
+              email: e.email,
+              phone: e.phone || '',
+              pin: e.postal_code,
+              petType: e.pet_type || 'Pet',
+              serviceRequested: e.service_requested || 'Care Service',
+              message: e.message,
+              status: e.status || 'new',
+              createdAt: e.created_at,
+            }))
+          );
+        }
+
+        // 2. Fetch Quotations from Supabase
+        const { data: dbQuotes } = await supabase
+          .from('quotations')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (dbQuotes) {
+          setQuotes(
+            dbQuotes.map((q: any) => ({
+              id: q.id,
+              quoteNumber: q.quote_number,
+              parentName: q.parent_id || 'Pet Parent',
+              parentEmail: 'parent@rara.test',
+              parentPin: q.postal_code || pin,
+              sitterName: q.sitter_id || 'Verified Sitter',
+              serviceName: q.service_name,
+              distanceKm: q.distance_km || 1.0,
+              baseAmount: parseFloat(q.base_amount || 0),
+              travelFee: parseFloat(q.travel_fee || 0),
+              taxAmount: parseFloat(q.tax_amount || 0),
+              discountAmount: parseFloat(q.discount_amount || 0),
+              totalAmount: parseFloat(q.total_amount || 0),
+              notes: q.notes,
+              validUntil: q.valid_until || '2026-12-31',
+              status: q.status || 'sent',
+              createdAt: q.created_at,
+            }))
+          );
+        }
+
+        // 3. Fetch Invoices from Supabase
+        const { data: dbInvoices } = await supabase
+          .from('invoices')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (dbInvoices) {
+          setInvoices(
+            dbInvoices.map((inv: any) => ({
+              id: inv.id,
+              invoiceNumber: inv.invoice_number,
+              quoteNumber: inv.quotation_id || '',
+              parentName: inv.parent_id || 'Pet Parent',
+              parentPin: pin,
+              sitterName: inv.sitter_id || 'Verified Sitter',
+              serviceName: 'Care Service Invoice',
+              subtotal: parseFloat(inv.subtotal || 0),
+              taxAmount: parseFloat(inv.tax_amount || 0),
+              totalAmount: parseFloat(inv.total_amount || 0),
+              status: inv.status || 'unpaid',
+              dueDate: inv.due_date,
+              paidAt: inv.paid_at,
+              paymentMethod: inv.payment_method,
+              createdAt: inv.created_at,
+            }))
+          );
+        }
+
+        // 4. Fetch Profiles / Sitters / Parents from Supabase
+        const { data: dbProfiles } = await supabase
+          .from('profiles')
+          .select('*, sitter_profiles(*)');
+
+        if (dbProfiles) {
+          const loadedSitters: SitterSpot[] = [];
+          const loadedParents: ParentSpot[] = [];
+
+          dbProfiles.forEach((p: any) => {
+            if (p.role === 'sitter') {
+              const sp = p.sitter_profiles || {};
+              loadedSitters.push({
+                id: p.id,
+                name: p.full_name,
+                pin: p.postal_code || '238201',
+                hourlyRate: sp.hourly_rate || 25,
+                rating: sp.rating || 4.9,
+                yearsExp: sp.years_experience || 3,
+                verified: sp.verified || true,
+                bio: sp.bio || 'Verified local pet caregiver.',
+                services: sp.services || ['Dog walking', 'Pet daycare'],
+              });
+            } else if (p.role === 'parent') {
+              loadedParents.push({
+                id: p.id,
+                name: p.full_name,
+                pin: p.postal_code || '238163',
+                petsCount: 1,
+                registeredDate: p.created_at ? p.created_at.slice(0, 10) : '2026-01-01',
+              });
+            }
+          });
+
+          setSitters(loadedSitters);
+          setParents(loadedParents);
+        }
+      } catch (err) {
+        console.warn('Supabase data load fallback:', err);
+      }
+    }
+
+    loadSupabaseData();
+  }, [pin]);
+
   function logout() {
     localStorage.removeItem('rara_dummy_session');
     location.href = '/login';
   }
 
-  // Handlers for quote actions
-  function handleAcceptQuote(quote: Quotation) {
+  // Handlers for quote actions with real Supabase persistence
+  async function handleAcceptQuote(quote: Quotation) {
     const updatedQuotes = quotes.map((q) => (q.id === quote.id ? { ...q, status: 'accepted' as const } : q));
     setQuotes(updatedQuotes);
 
-    // Auto-generate invoice
+    const newInvoiceNumber = 'INV-2026-' + Math.floor(100 + Math.random() * 900);
+    const subtotal = quote.baseAmount + quote.travelFee - quote.discountAmount;
+
+    // Persist to Supabase
+    try {
+      const supabase = createClient();
+      await supabase.from('quotations').update({ status: 'accepted' }).eq('id', quote.id);
+      await supabase.from('invoices').insert({
+        invoice_number: newInvoiceNumber,
+        quotation_id: quote.id,
+        parent_id: quote.parentName,
+        subtotal: subtotal,
+        tax_amount: quote.taxAmount,
+        total_amount: quote.totalAmount,
+        status: 'unpaid',
+        due_date: quote.validUntil,
+      });
+    } catch (err) {
+      console.warn('Supabase invoice insert error:', err);
+    }
+
     const newInvoice: Invoice = {
       id: 'inv_' + Date.now(),
-      invoiceNumber: 'INV-2026-' + Math.floor(100 + Math.random() * 900),
+      invoiceNumber: newInvoiceNumber,
       quoteNumber: quote.quoteNumber,
       parentName: quote.parentName,
       parentPin: quote.parentPin,
       sitterName: quote.sitterName,
       serviceName: quote.serviceName,
-      subtotal: quote.baseAmount + quote.travelFee - quote.discountAmount,
+      subtotal: subtotal,
       taxAmount: quote.taxAmount,
       totalAmount: quote.totalAmount,
       status: 'unpaid',
@@ -268,43 +268,84 @@ export default function DashboardDynamic({
     setInvoices([newInvoice, ...invoices]);
   }
 
-  function handleDeclineQuote(quote: Quotation) {
+  async function handleDeclineQuote(quote: Quotation) {
     const updatedQuotes = quotes.map((q) => (q.id === quote.id ? { ...q, status: 'declined' as const } : q));
     setQuotes(updatedQuotes);
+
+    try {
+      const supabase = createClient();
+      await supabase.from('quotations').update({ status: 'declined' }).eq('id', quote.id);
+    } catch {}
   }
 
-  function handlePayInvoice(invoice: Invoice) {
+  async function handlePayInvoice(invoice: Invoice) {
+    const paidTime = new Date().toISOString();
     const updatedInvoices = invoices.map((inv) =>
       inv.id === invoice.id
         ? {
             ...inv,
             status: 'paid' as const,
-            paidAt: new Date().toISOString(),
-            paymentMethod: 'Credit Card / PayNow',
+            paidAt: paidTime,
+            paymentMethod: 'Credit Card / PayNow SG',
           }
         : inv
     );
     setInvoices(updatedInvoices);
+
+    try {
+      const supabase = createClient();
+      await supabase
+        .from('invoices')
+        .update({ status: 'paid', paid_at: paidTime, payment_method: 'Credit Card / PayNow SG' })
+        .eq('id', invoice.id);
+    } catch {}
   }
 
-  function handleCreateQuote(newQuoteData: Omit<Quotation, 'id' | 'createdAt'>) {
+  async function handleCreateQuote(newQuoteData: Omit<Quotation, 'id' | 'createdAt'>) {
+    const quoteNumber = 'QUO-2026-' + Math.floor(100 + Math.random() * 900);
+
+    try {
+      const supabase = createClient();
+      await supabase.from('quotations').insert({
+        quote_number: quoteNumber,
+        service_name: newQuoteData.serviceName,
+        postal_code: newQuoteData.parentPin,
+        distance_km: newQuoteData.distanceKm,
+        base_amount: newQuoteData.baseAmount,
+        travel_fee: newQuoteData.travelFee,
+        tax_amount: newQuoteData.taxAmount,
+        discount_amount: newQuoteData.discountAmount,
+        total_amount: newQuoteData.totalAmount,
+        notes: newQuoteData.notes,
+        valid_until: newQuoteData.validUntil,
+        status: 'sent',
+      });
+    } catch (err) {
+      console.warn('Supabase quote insert error:', err);
+    }
+
     const newQuote: Quotation = {
       ...newQuoteData,
       id: 'q_' + Date.now(),
+      quoteNumber: quoteNumber,
       createdAt: new Date().toISOString(),
     };
     setQuotes([newQuote, ...quotes]);
   }
 
-  function handleConvertEnquiryToQuote(enquiry: PublicEnquiry) {
+  async function handleConvertEnquiryToQuote(enquiry: PublicEnquiry) {
     setActiveModal({
       type: 'create_quote',
       item: null,
     });
 
-    // Mark enquiry as quoted
     const updatedEnquiries = enquiries.map((e) => (e.id === enquiry.id ? { ...e, status: 'quoted' as const } : e));
     setEnquiries(updatedEnquiries);
+
+    try {
+      const supabase = createClient();
+      await supabase.from('enquiries').update({ status: 'quoted' }).eq('id', enquiry.id);
+    } catch {}
   }
 
   return (
@@ -448,13 +489,72 @@ function ParentContent({
   onOpenInvoice: (inv: Invoice) => void;
   onRequestQuoteSitter: (sitter: SitterSpot) => void;
 }) {
-  const [pets, setPets] = useStored<Pet[]>('rara_pets', [
-    { id: 1, type: 'dog', name: 'Milo', dob: '2022-04-12', gender: 'Male' },
-    { id: 2, type: 'cat', name: 'Coco', dob: '2023-01-20', gender: 'Female' },
-  ]);
-  const [requests, setRequests] = useStored<Request[]>('rara_requests', []);
+  const [pets, setPets] = useState<Pet[]>([]);
+  const [requests, setRequests] = useState<Request[]>([]);
   const [petForm, setPetForm] = useState(false);
   const [serviceForm, setServiceForm] = useState(false);
+
+  useEffect(() => {
+    async function loadPetsAndBookings() {
+      try {
+        const supabase = createClient();
+        const { data: dbPets } = await supabase.from('pets').select('*');
+        if (dbPets) {
+          setPets(
+            dbPets.map((p: any) => ({
+              id: p.id,
+              type: p.species || 'dog',
+              name: p.name,
+              dob: p.birth_date || '2023-01-01',
+              gender: 'Pet',
+            }))
+          );
+        }
+
+        const { data: dbBookings } = await supabase.from('bookings').select('*');
+        if (dbBookings) {
+          setRequests(
+            dbBookings.map((b: any) => ({
+              id: b.id,
+              from: b.starts_at,
+              to: b.ends_at,
+              type: 'Care Service',
+              status: b.status || 'Requested',
+            }))
+          );
+        }
+      } catch (err) {
+        console.warn('Supabase pets query error:', err);
+      }
+    }
+    loadPetsAndBookings();
+  }, []);
+
+  async function handleAddPet(p: Omit<Pet, 'id'>) {
+    const newPet: Pet = { ...p, id: 'pet_' + Date.now() };
+    setPets((prev) => [...prev, newPet]);
+    setPetForm(false);
+
+    try {
+      const supabase = createClient();
+      const user = (await supabase.auth.getUser()).data.user;
+      if (user) {
+        await supabase.from('pets').insert({
+          parent_id: user.id,
+          name: p.name,
+          species: p.type,
+          birth_date: p.dob,
+        });
+      }
+    } catch {}
+  }
+
+  async function handleAddRequest(r: Omit<Request, 'id' | 'status'>) {
+    const newReq: Request = { ...r, id: 'req_' + Date.now(), status: 'Requested' };
+    setRequests((prev) => [...prev, newReq]);
+    setServiceForm(false);
+  }
+
 
   if (tab === 'Nearby Sitters (5km Map)') {
     return (
@@ -483,12 +583,7 @@ function ParentContent({
           </button>
         </div>
         {petForm && (
-          <PetForm
-            save={(p) => {
-              setPets([...pets, { ...p, id: Date.now() }]);
-              setPetForm(false);
-            }}
-          />
+          <PetForm save={handleAddPet} />
         )}
         <div className="item-grid">
           {pets.length ? (
@@ -521,13 +616,9 @@ function ParentContent({
           </button>
         </div>
         {serviceForm && (
-          <ServiceForm
-            save={(r) => {
-              setRequests([...requests, { ...r, id: Date.now(), status: 'Requested' }]);
-              setServiceForm(false);
-            }}
-          />
+          <ServiceForm save={handleAddRequest} />
         )}
+
         <RequestList requests={requests} />
       </>
     );

@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { Mail, Phone, MapPin, Send, CheckCircle2, PawPrint, MessageSquare } from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
 
 export type PublicEnquiry = {
   id: string;
@@ -20,36 +21,51 @@ export default function EnquiryForm() {
   const [submitted, setSubmitted] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setBusy(true);
 
     const form = new FormData(e.currentTarget);
-    const enquiry: PublicEnquiry = {
-      id: 'ENQ-' + Date.now().toString().slice(-6),
+    const enquiryPayload = {
       name: String(form.get('name')).trim(),
       email: String(form.get('email')).trim().toLowerCase(),
       phone: String(form.get('phone')).trim(),
-      pin: String(form.get('pin')).trim(),
-      petType: String(form.get('petType')),
-      serviceRequested: String(form.get('serviceRequested')),
+      postal_code: String(form.get('pin')).trim(),
+      pet_type: String(form.get('petType')),
+      service_requested: String(form.get('serviceRequested')),
       message: String(form.get('message')).trim(),
       status: 'new',
-      createdAt: new Date().toISOString(),
     };
 
     try {
-      const existing: PublicEnquiry[] = JSON.parse(localStorage.getItem('rara_public_enquiries') || '[]');
-      localStorage.setItem('rara_public_enquiries', JSON.stringify([enquiry, ...existing]));
-    } catch {
-      // Storage fallback
+      const supabase = createClient();
+      await supabase.from('enquiries').insert(enquiryPayload);
+    } catch (err) {
+      console.warn('Supabase enquiry insert fallback:', err);
     }
 
-    setTimeout(() => {
-      setBusy(false);
-      setSubmitted(true);
-    }, 400);
+    // Local state fallback for offline/demo mode
+    try {
+      const localItem: PublicEnquiry = {
+        id: 'ENQ-' + Date.now().toString().slice(-6),
+        name: enquiryPayload.name,
+        email: enquiryPayload.email,
+        phone: enquiryPayload.phone,
+        pin: enquiryPayload.postal_code,
+        petType: enquiryPayload.pet_type,
+        serviceRequested: enquiryPayload.service_requested,
+        message: enquiryPayload.message,
+        status: 'new',
+        createdAt: new Date().toISOString(),
+      };
+      const existing: PublicEnquiry[] = JSON.parse(localStorage.getItem('rara_public_enquiries') || '[]');
+      localStorage.setItem('rara_public_enquiries', JSON.stringify([localItem, ...existing]));
+    } catch {}
+
+    setBusy(false);
+    setSubmitted(true);
   }
+
 
   return (
     <section id="enquiry" className="section" style={{ background: '#f8fafc', padding: '64px 20px', borderRadius: '24px', margin: '40px auto', maxWidth: '1100px' }}>
@@ -121,14 +137,14 @@ export default function EnquiryForm() {
                 Fill out the form below to receive care availability and quotation details.
               </p>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div className="form-row-2col">
                 <label style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '13px', fontWeight: '600', color: '#334155' }}>
                   Full Name *
                   <input
                     name="name"
                     required
                     placeholder="e.g. Sarah Tan"
-                    style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
+                    style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', width: '100%' }}
                   />
                 </label>
 
@@ -139,19 +155,19 @@ export default function EnquiryForm() {
                     name="email"
                     required
                     placeholder="sarah@example.com"
-                    style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
+                    style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', width: '100%' }}
                   />
                 </label>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div className="form-row-2col">
                 <label style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '13px', fontWeight: '600', color: '#334155' }}>
                   Phone Number
                   <input
                     type="tel"
                     name="phone"
                     placeholder="+65 9123 4567"
-                    style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
+                    style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', width: '100%' }}
                   />
                 </label>
 
@@ -163,15 +179,15 @@ export default function EnquiryForm() {
                     pattern="[0-9]{6}"
                     maxLength={6}
                     placeholder="6-digit PIN e.g. 238163"
-                    style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
+                    style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', width: '100%' }}
                   />
                 </label>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div className="form-row-2col">
                 <label style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '13px', fontWeight: '600', color: '#334155' }}>
                   Pet Type
-                  <select name="petType" style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', background: '#fff' }}>
+                  <select name="petType" style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', background: '#fff', width: '100%' }}>
                     <option value="Dog">Dog</option>
                     <option value="Cat">Cat</option>
                     <option value="Bird">Bird</option>
@@ -182,7 +198,7 @@ export default function EnquiryForm() {
 
                 <label style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '13px', fontWeight: '600', color: '#334155' }}>
                   Requested Service
-                  <select name="serviceRequested" style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', background: '#fff' }}>
+                  <select name="serviceRequested" style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', background: '#fff', width: '100%' }}>
                     <option value="Dog Walking">Dog Walking</option>
                     <option value="Pet Daycare">Pet Daycare</option>
                     <option value="Home Boarding">Home Boarding</option>
@@ -191,6 +207,7 @@ export default function EnquiryForm() {
                   </select>
                 </label>
               </div>
+
 
               <label style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '13px', fontWeight: '600', color: '#334155' }}>
                 Your Message / Care Requirements *

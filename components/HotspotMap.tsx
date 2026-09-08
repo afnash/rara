@@ -255,7 +255,7 @@ export default function HotspotMap({
           />
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <div className="hotspot-filter-controls">
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: '600', color: '#374151' }}>
             <Filter size={16} /> Radius:
             <select
@@ -263,10 +263,10 @@ export default function HotspotMap({
               onChange={(e) => setRadiusKm(parseFloat(e.target.value))}
               style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #d1d5db', fontSize: '13px', background: '#fff' }}
             >
-              <option value={1}>1 km (Immediate Neighbourhood)</option>
-              <option value={3}>3 km (Close Proximity)</option>
-              <option value={5}>5 km Radius (Standard Matching)</option>
-              <option value={10}>10 km (Extended Area)</option>
+              <option value={1}>1 km (Immediate)</option>
+              <option value={3}>3 km (Proximity)</option>
+              <option value={5}>5 km Radius</option>
+              <option value={10}>10 km (Extended)</option>
             </select>
           </div>
 
@@ -286,12 +286,14 @@ export default function HotspotMap({
               alignItems: 'center',
               gap: '6px',
               fontWeight: '600',
+              whiteSpace: 'nowrap',
             }}
           >
             <Navigation size={14} /> {isLiveTracking ? '📡 Live Tracking ON' : 'Start Live GPS Tracking'}
           </button>
         </div>
       </div>
+
 
 
       {/* Main Map & Hotspot Sidebar Layout */}

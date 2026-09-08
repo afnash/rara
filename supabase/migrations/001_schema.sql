@@ -1,10 +1,28 @@
 create extension if not exists pgcrypto;
-create type public.user_role as enum ('parent','sitter','admin');
-create type public.booking_status as enum ('requested','accepted','confirmed','in_progress','completed','cancelled');
-create type public.quote_status as enum ('draft','sent','accepted','declined','expired');
-create type public.invoice_status as enum ('unpaid','paid','overdue','cancelled');
 
-create table public.profiles(
+-- Safe creation of ENUM types using exception handlers
+do $$ begin
+  create type public.user_role as enum ('parent','sitter','admin');
+exception when duplicate_object then null;
+end $$;
+
+do $$ begin
+  create type public.booking_status as enum ('requested','accepted','confirmed','in_progress','completed','cancelled');
+exception when duplicate_object then null;
+end $$;
+
+do $$ begin
+  create type public.quote_status as enum ('draft','sent','accepted','declined','expired');
+exception when duplicate_object then null;
+end $$;
+
+do $$ begin
+  create type public.invoice_status as enum ('unpaid','paid','overdue','cancelled');
+exception when duplicate_object then null;
+end $$;
+
+-- Table: public.profiles
+create table if not exists public.profiles(
   id uuid primary key references auth.users(id) on delete cascade,
   full_name text not null,
   role public.user_role not null default 'parent',
@@ -17,7 +35,14 @@ create table public.profiles(
   created_at timestamptz not null default now()
 );
 
-create table public.sitter_profiles(
+-- Ensure columns exist if table was previously created
+alter table public.profiles add column if not exists postal_code text;
+alter table public.profiles add column if not exists address text;
+alter table public.profiles add column if not exists latitude numeric(10,6);
+alter table public.profiles add column if not exists longitude numeric(10,6);
+
+-- Table: public.sitter_profiles
+create table if not exists public.sitter_profiles(
   user_id uuid primary key references public.profiles(id) on delete cascade,
   bio text,
   years_experience int not null default 0,
@@ -30,7 +55,11 @@ create table public.sitter_profiles(
   services text[] default '{}'
 );
 
-create table public.pets(
+alter table public.sitter_profiles add column if not exists service_radius_km numeric(4,1) not null default 5.0;
+alter table public.sitter_profiles add column if not exists travel_fee numeric(10,2) not null default 0.0;
+
+-- Table: public.pets
+create table if not exists public.pets(
   id uuid primary key default gen_random_uuid(),
   parent_id uuid not null references public.profiles(id) on delete cascade,
   name text not null,
@@ -43,7 +72,8 @@ create table public.pets(
   created_at timestamptz not null default now()
 );
 
-create table public.services(
+-- Table: public.services
+create table if not exists public.services(
   id uuid primary key default gen_random_uuid(),
   slug text unique not null,
   name text not null,
@@ -53,7 +83,8 @@ create table public.services(
   active boolean not null default true
 );
 
-create table public.bookings(
+-- Table: public.bookings
+create table if not exists public.bookings(
   id uuid primary key default gen_random_uuid(),
   parent_id uuid not null references public.profiles(id),
   sitter_id uuid references public.profiles(id),
@@ -72,7 +103,12 @@ create table public.bookings(
   constraint valid_dates check(ends_at>starts_at)
 );
 
-create table public.availability(
+alter table public.bookings add column if not exists postal_code text;
+alter table public.bookings add column if not exists latitude numeric(10,6);
+alter table public.bookings add column if not exists longitude numeric(10,6);
+
+-- Table: public.availability
+create table if not exists public.availability(
   id uuid primary key default gen_random_uuid(),
   sitter_id uuid not null references public.profiles(id) on delete cascade,
   starts_at timestamptz not null,
@@ -81,7 +117,8 @@ create table public.availability(
   constraint valid_availability check(ends_at>starts_at)
 );
 
-create table public.booking_updates(
+-- Table: public.booking_updates
+create table if not exists public.booking_updates(
   id uuid primary key default gen_random_uuid(),
   booking_id uuid not null references public.bookings(id) on delete cascade,
   author_id uuid not null references public.profiles(id),
@@ -90,7 +127,8 @@ create table public.booking_updates(
   created_at timestamptz not null default now()
 );
 
-create table public.messages(
+-- Table: public.messages
+create table if not exists public.messages(
   id uuid primary key default gen_random_uuid(),
   booking_id uuid not null references public.bookings(id) on delete cascade,
   sender_id uuid not null references public.profiles(id),
@@ -100,7 +138,8 @@ create table public.messages(
   created_at timestamptz not null default now()
 );
 
-create table public.reviews(
+-- Table: public.reviews
+create table if not exists public.reviews(
   id uuid primary key default gen_random_uuid(),
   booking_id uuid unique not null references public.bookings(id),
   parent_id uuid not null references public.profiles(id),
@@ -110,7 +149,8 @@ create table public.reviews(
   created_at timestamptz not null default now()
 );
 
-create table public.payments(
+-- Table: public.payments
+create table if not exists public.payments(
   id uuid primary key default gen_random_uuid(),
   booking_id uuid unique not null references public.bookings(id),
   provider_ref text,
@@ -121,7 +161,7 @@ create table public.payments(
 );
 
 -- Public Visitor Enquiries Table
-create table public.enquiries(
+create table if not exists public.enquiries(
   id uuid primary key default gen_random_uuid(),
   name text not null,
   email text not null,
@@ -136,7 +176,7 @@ create table public.enquiries(
 );
 
 -- Quotations Table
-create table public.quotations(
+create table if not exists public.quotations(
   id uuid primary key default gen_random_uuid(),
   quote_number text unique not null,
   enquiry_id uuid references public.enquiries(id) on delete set null,
@@ -158,7 +198,7 @@ create table public.quotations(
 );
 
 -- Invoices Table
-create table public.invoices(
+create table if not exists public.invoices(
   id uuid primary key default gen_random_uuid(),
   invoice_number text unique not null,
   quotation_id uuid references public.quotations(id) on delete set null,
@@ -208,6 +248,7 @@ begin
   return new;
 end;$$;
 
+drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created after insert on auth.users for each row execute procedure public.handle_new_user();
 
 insert into public.services(slug,name,description,base_price,unit) values
@@ -215,5 +256,5 @@ insert into public.services(slug,name,description,base_price,unit) values
 ('walk','Dog walking','One-to-one neighbourhood walk',22,'walk'),
 ('daycare','Pet daycare','Small-group enrichment daycare',45,'day'),
 ('boarding','Home boarding','Overnight care in a verified sitter home',55,'night'),
-('stayover','Home stayover','A sitter stays with your pet at home',70,'night');
-
+('stayover','Home stayover','A sitter stays with your pet at home',70,'night')
+on conflict (slug) do nothing;
