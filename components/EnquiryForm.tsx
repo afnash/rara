@@ -13,7 +13,7 @@ export type PublicEnquiry = {
   petType: string;
   serviceRequested: string;
   message: string;
-  status: 'new' | 'quoted' | 'reviewed';
+  status: 'new' | 'quoted' | 'reviewed' | 'confirmed';
   createdAt: string;
 };
 

@@ -30,6 +30,7 @@ import HotspotMap, { SitterSpot, ParentSpot } from './HotspotMap';
 import QuotationInvoiceModal, { Quotation, Invoice } from './QuotationInvoiceModal';
 import { PublicEnquiry } from './EnquiryForm';
 import { createClient } from '@/lib/supabase/client';
+import { getCoordsFromPin, calculateDistanceKm, getPinMatch } from '@/lib/postal';
 
 
 type Role = 'parent' | 'sitter' | 'admin';
@@ -426,8 +427,10 @@ export default function DashboardDynamic({
             <SitterContent
               tab={tab}
               pin={pin}
+              sitterName={name}
               quotes={quotes}
               invoices={invoices}
+              enquiries={enquiries}
               onOpenQuote={(q) => setActiveModal({ type: 'quote', item: q })}
               onOpenInvoice={(inv) => setActiveModal({ type: 'invoice', item: inv })}
             />
@@ -653,45 +656,175 @@ function ParentContent({
 }
 
 /* =========================================================================
+   HELPER: NEAREST SITTER AUTO-MATCH
+   ========================================================================= */
+function findNearestSitter(enqPin: string, sittersList: SitterSpot[]): { sitter: SitterSpot; distanceKm: number } | null {
+  if (!sittersList || !sittersList.length) return null;
+  const enqCoords = getCoordsFromPin(enqPin);
+  let bestSitter: SitterSpot | null = null;
+  let minDistance = Infinity;
+
+  for (const sitter of sittersList) {
+    const sCoords = getCoordsFromPin(sitter.pin);
+    const dist = calculateDistanceKm(enqCoords.lat, enqCoords.lng, sCoords.lat, sCoords.lng);
+    if (dist <= 5.0 && dist < minDistance) {
+      minDistance = dist;
+      bestSitter = sitter;
+    }
+  }
+
+  if (!bestSitter) return null;
+  return { sitter: bestSitter, distanceKm: minDistance };
+}
+
+/* =========================================================================
    SITTER CONTENT VIEW
    ========================================================================= */
 function SitterContent({
   tab,
   pin,
+  sitterName,
   quotes,
   invoices,
+  enquiries = [],
   onOpenQuote,
   onOpenInvoice,
 }: {
   tab: string;
   pin: string;
+  sitterName: string;
   quotes: Quotation[];
   invoices: Invoice[];
+  enquiries?: PublicEnquiry[];
   onOpenQuote: (q: Quotation) => void;
   onOpenInvoice: (inv: Invoice) => void;
 }) {
   const paidRevenue = invoices.filter((inv) => inv.status === 'paid').reduce((sum, inv) => sum + inv.totalAmount, 0);
   const pendingRevenue = invoices.filter((inv) => inv.status === 'unpaid').reduce((sum, inv) => sum + inv.totalAmount, 0);
 
+  // Filter care requests in sitter's 5km locality radius
+  const localityEnquiries = enquiries.map((e) => {
+    const match = getPinMatch(pin, e.pin, 5.0);
+    return { ...e, distanceKm: match.distance, isWithin: match.isWithin };
+  }).filter((e) => e.isWithin);
+
+  async function handleAcceptLocalityRequest(enq: PublicEnquiry & { distanceKm: number }) {
+    const quoteNumber = 'QUO-2026-' + Math.floor(100 + Math.random() * 900);
+    const baseAmount = 45.0;
+    const travelFee = enq.distanceKm > 2.0 ? 10.0 : 5.0;
+    const totalAmount = baseAmount + travelFee;
+
+    try {
+      const supabase = createClient();
+      await supabase.from('enquiries').update({ status: 'quoted' }).eq('id', enq.id);
+      await supabase.from('quotations').insert({
+        quote_number: quoteNumber,
+        service_name: `${enq.serviceRequested} for ${enq.petType}`,
+        postal_code: enq.pin,
+        distance_km: enq.distanceKm,
+        base_amount: baseAmount,
+        travel_fee: travelFee,
+        tax_amount: 0,
+        discount_amount: 0,
+        total_amount: totalAmount,
+        notes: `Accepted directly by Sitter ${sitterName}. Note: ${enq.message}`,
+        valid_until: '2026-12-31',
+        status: 'accepted',
+        sitter_id: sitterName,
+        parent_id: enq.name,
+      });
+
+      alert(`Care Request Accepted! Quotation ${quoteNumber} issued for ${enq.name}.`);
+      location.reload();
+    } catch (err) {
+      console.warn('Failed to accept care request:', err);
+    }
+  }
+
   if (tab === 'Care requests') {
     return (
-      <div className="list">
-        {quotes.length ? (
-          quotes.map((q) => (
-            <article className="request-row" key={q.id}>
-              <PawPrint />
-              <div>
-                <b>{q.serviceName} near PIN {q.parentPin} ({q.distanceKm}km away)</b>
-                <span>Status: {q.status.toUpperCase()} · Valid: {q.validUntil}</span>
-              </div>
-              <button onClick={() => onOpenQuote(q)} style={{ padding: '6px 12px', background: '#00982d', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: '600' }}>
-                View & Manage
-              </button>
-            </article>
-          ))
-        ) : (
-          <Empty title="No active care requests" text="Care requests from nearby pet parents will appear here." />
-        )}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        <div>
+          <h3 style={{ margin: '0 0 4px', fontSize: '16px', fontWeight: '700' }}>
+            Locality Care Requests (within 5km of PIN {pin})
+          </h3>
+          <p style={{ margin: 0, fontSize: '13px', color: '#6b7280' }}>
+            Pet parent requests received in your area. Accept requests to confirm care jobs.
+          </p>
+        </div>
+
+        <div className="list" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          {localityEnquiries.length ? (
+            localityEnquiries.map((enq) => (
+              <article
+                key={enq.id}
+                style={{
+                  background: '#fff',
+                  padding: '16px',
+                  borderRadius: '12px',
+                  border: '1px solid #e5e7eb',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                }}
+              >
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                    <b style={{ fontSize: '15px' }}>{enq.serviceRequested} for {enq.petType}</b>
+                    <span style={{ background: '#e0f2fe', color: '#0369a1', fontSize: '11px', fontWeight: '700', padding: '2px 8px', borderRadius: '12px' }}>
+                      PIN {enq.pin} ({enq.distanceKm}km away)
+                    </span>
+                  </div>
+                  <p style={{ margin: '0 0 6px', fontSize: '13px', color: '#4b5563' }}>
+                    Parent: <b>{enq.name}</b> · Contact: {enq.email}
+                  </p>
+                  <p style={{ margin: 0, fontSize: '12px', color: '#1f2937', background: '#f9fafb', padding: '8px 12px', borderRadius: '6px', fontStyle: 'italic' }}>
+                    "{enq.message}"
+                  </p>
+                </div>
+
+                <button
+                  onClick={() => handleAcceptLocalityRequest(enq)}
+                  style={{
+                    padding: '10px 16px',
+                    background: '#00982d',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '8px',
+                    fontWeight: '700',
+                    fontSize: '13px',
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  Accept Care Request
+                </button>
+              </article>
+            ))
+          ) : (
+            <Empty title="No new locality care requests" text="Requests from pet parents within 5km of your PIN code will appear here." />
+          )}
+        </div>
+
+        <h3 style={{ margin: '16px 0 4px', fontSize: '16px', fontWeight: '700' }}>Active Assigned Quotations & Bookings</h3>
+        <div className="list">
+          {quotes.length ? (
+            quotes.map((q) => (
+              <article className="request-row" key={q.id}>
+                <PawPrint />
+                <div>
+                  <b>{q.serviceName} near PIN {q.parentPin} ({q.distanceKm}km away)</b>
+                  <span>Status: {q.status.toUpperCase()} · Customer: {q.parentName}</span>
+                </div>
+                <button onClick={() => onOpenQuote(q)} style={{ padding: '6px 12px', background: '#00982d', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: '600' }}>
+                  View Details
+                </button>
+              </article>
+            ))
+          ) : (
+            <Empty title="No active quotations" text="Issued quotes will be listed here." />
+          )}
+        </div>
       </div>
     );
   }
@@ -738,7 +871,7 @@ function SitterContent({
       role="sitter"
       counts={[
         ['Active Quotes (DB)', String(quotes.length)],
-        ['Issued Invoices (DB)', String(invoices.length)],
+        ['Locality Enquiries (5km)', String(localityEnquiries.length)],
         ['Paid Revenue', `$${paidRevenue.toFixed(2)}`],
       ]}
     />
@@ -786,6 +919,40 @@ function AdminContent({
   const paidRevenue = invoices.filter((inv) => inv.status === 'paid').reduce((sum, inv) => sum + inv.totalAmount, 0);
   const unpaidInvoices = invoices.filter((inv) => inv.status === 'unpaid').reduce((sum, inv) => sum + inv.totalAmount, 0);
 
+  // Admin Auto-Assignment Confirmation handler
+  async function handleConfirmAutoAssign(enq: PublicEnquiry, matchedSitter: SitterSpot, distanceKm: number) {
+    const quoteNumber = 'QUO-2026-' + Math.floor(100 + Math.random() * 900);
+    const baseAmount = 45.0;
+    const travelFee = distanceKm > 2.0 ? 10.0 : 5.0;
+    const totalAmount = baseAmount + travelFee;
+
+    try {
+      const supabase = createClient();
+      await supabase.from('enquiries').update({ status: 'confirmed' }).eq('id', enq.id);
+      await supabase.from('quotations').insert({
+        quote_number: quoteNumber,
+        service_name: `${enq.serviceRequested} for ${enq.petType}`,
+        postal_code: enq.pin,
+        distance_km: distanceKm,
+        base_amount: baseAmount,
+        travel_fee: travelFee,
+        tax_amount: 0,
+        discount_amount: 0,
+        total_amount: totalAmount,
+        notes: `Auto-matched by RaRa 5km Locality Engine. Confirmed by Admin. Customer note: ${enq.message}`,
+        valid_until: '2026-12-31',
+        status: 'sent',
+        sitter_id: matchedSitter.name,
+        parent_id: enq.name,
+      });
+
+      alert(`Assignment Confirmed! Quotation ${quoteNumber} issued and assigned to Sitter ${matchedSitter.name}.`);
+      location.reload();
+    } catch (err) {
+      console.warn('Auto-assignment confirm error:', err);
+    }
+  }
+
   // Toggle Sitter verification in Supabase
   async function toggleSitterApproval(sitterId: string, currentVerified: boolean) {
     try {
@@ -814,75 +981,111 @@ function AdminContent({
     );
   }
 
-  if (tab === 'Visitor Enquiries') {
+  if (tab === 'Visitor Enquiries' || tab === 'Parent Requests & Auto-Assign') {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
         <p style={{ margin: 0, fontSize: '14px', color: '#4b5563' }}>
-          Public inquiries submitted by visitors from the website. Review details and convert them into formal quotations.
+          Parent care requests and visitor inquiries. The system automatically calculates the nearest verified sitter within a 5km locality radius. Confirm assignments to dispatch sitters.
         </p>
 
-        <div className="list" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <div className="list" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
           {enquiries.length ? (
-            enquiries.map((enq) => (
-              <article
-                key={enq.id}
-                style={{
-                  background: '#fff',
-                  padding: '16px',
-                  borderRadius: '12px',
-                  border: '1px solid #e5e7eb',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                }}
-              >
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                    <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '700' }}>{enq.name}</h3>
-                    <span style={{ background: '#e0f2fe', color: '#0369a1', fontSize: '11px', fontWeight: '700', padding: '2px 8px', borderRadius: '12px' }}>
-                      PIN {enq.pin}
-                    </span>
-                    <span style={{ background: enq.status === 'quoted' ? '#dcfce7' : '#fef3c7', color: enq.status === 'quoted' ? '#15803d' : '#b45309', fontSize: '11px', fontWeight: '700', padding: '2px 8px', borderRadius: '12px' }}>
-                      {enq.status.toUpperCase()}
-                    </span>
-                  </div>
-                  <p style={{ margin: '0 0 6px', fontSize: '13px', color: '#4b5563' }}>
-                    Requested: <b>{enq.serviceRequested}</b> for {enq.petType} · Email: {enq.email} {enq.phone && `· Phone: ${enq.phone}`}
-                  </p>
-                  <p style={{ margin: 0, fontSize: '13px', color: '#1f2937', background: '#f9fafb', padding: '8px 12px', borderRadius: '6px', fontStyle: 'italic' }}>
-                    "{enq.message}"
-                  </p>
-                </div>
+            enquiries.map((enq) => {
+              const match = findNearestSitter(enq.pin, sitters);
+              return (
+                <article
+                  key={enq.id}
+                  style={{
+                    background: '#fff',
+                    padding: '16px',
+                    borderRadius: '12px',
+                    border: '1px solid #e5e7eb',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '12px',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                        <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '700' }}>{enq.name}</h3>
+                        <span style={{ background: '#e0f2fe', color: '#0369a1', fontSize: '11px', fontWeight: '700', padding: '2px 8px', borderRadius: '12px' }}>
+                          PIN {enq.pin}
+                        </span>
+                        <span style={{ background: enq.status === 'confirmed' ? '#dcfce7' : enq.status === 'quoted' ? '#e0f2fe' : '#fef3c7', color: enq.status === 'confirmed' ? '#15803d' : enq.status === 'quoted' ? '#0369a1' : '#b45309', fontSize: '11px', fontWeight: '700', padding: '2px 8px', borderRadius: '12px' }}>
+                          {enq.status.toUpperCase()}
+                        </span>
+                      </div>
+                      <p style={{ margin: '0 0 4px', fontSize: '13px', color: '#4b5563' }}>
+                        Requested: <b>{enq.serviceRequested}</b> for {enq.petType} · Email: {enq.email} {enq.phone && `· Phone: ${enq.phone}`}
+                      </p>
+                      <p style={{ margin: 0, fontSize: '13px', color: '#1f2937', background: '#f9fafb', padding: '8px 12px', borderRadius: '6px', fontStyle: 'italic' }}>
+                        "{enq.message}"
+                      </p>
+                    </div>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', minWidth: '160px', alignItems: 'flex-end' }}>
-                  <small style={{ fontSize: '11px', color: '#9ca3af' }}>{new Date(enq.createdAt).toLocaleDateString()}</small>
-                  {enq.status !== 'quoted' ? (
-                    <button
-                      onClick={() => onConvertEnquiry(enq)}
-                      style={{
-                        padding: '8px 14px',
-                        background: '#00982d',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '8px',
-                        fontSize: '12px',
-                        fontWeight: '700',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '4px',
-                      }}
-                    >
-                      <Send size={14} /> Create Quote
-                    </button>
-                  ) : (
-                    <span style={{ fontSize: '12px', fontWeight: '700', color: '#16a34a', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <CheckCircle2 size={14} /> Quote Issued
-                    </span>
-                  )}
-                </div>
-              </article>
-            ))
+                    <small style={{ fontSize: '11px', color: '#9ca3af' }}>{new Date(enq.createdAt).toLocaleDateString()}</small>
+                  </div>
+
+                  {/* Auto-Matched Sitter Box */}
+                  <div style={{ background: '#f0fdf4', padding: '12px 14px', borderRadius: '8px', border: '1px solid #bbf7d0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <small style={{ fontSize: '11px', color: '#15803d', fontWeight: '800', display: 'block' }}>🤖 AUTOMATIC 5KM LOCALITY MATCH</small>
+                      {match ? (
+                        <b style={{ fontSize: '14px', color: '#111827' }}>
+                          Matched Sitter: {match.sitter.name} <span style={{ fontWeight: 'normal', color: '#4b5563' }}>({match.distanceKm}km away · PIN {match.sitter.pin})</span>
+                        </b>
+                      ) : (
+                        <span style={{ fontSize: '13px', color: '#d97706', fontWeight: '600' }}>⚠️ No verified sitter registered within 5km radius</span>
+                      )}
+                    </div>
+
+                    <div>
+                      {enq.status === 'new' && match ? (
+                        <button
+                          onClick={() => handleConfirmAutoAssign(enq, match.sitter, match.distanceKm)}
+                          style={{
+                            padding: '8px 14px',
+                            background: '#00982d',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '8px',
+                            fontSize: '12px',
+                            fontWeight: '700',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                          }}
+                        >
+                          <CheckCircle2 size={14} /> Confirm & Assign Sitter
+                        </button>
+                      ) : enq.status !== 'new' ? (
+                        <span style={{ fontSize: '12px', fontWeight: '700', color: '#16a34a', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <CheckCircle2 size={14} /> Confirmed / Quoted
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => onConvertEnquiry(enq)}
+                          style={{
+                            padding: '8px 14px',
+                            background: '#3b82f6',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '8px',
+                            fontSize: '12px',
+                            fontWeight: '700',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          Manual Quote
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </article>
+              );
+            })
           ) : (
             <Empty title="No visitor inquiries" text="Public inquiries submitted on the home page will appear here." />
           )}
