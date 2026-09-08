@@ -23,7 +23,7 @@ end $$;
 
 -- Table: public.profiles
 create table if not exists public.profiles(
-  id uuid primary key references auth.users(id) on delete cascade,
+  id uuid primary key default gen_random_uuid(),
   full_name text not null,
   role public.user_role not null default 'parent',
   avatar_url text,
@@ -35,7 +35,8 @@ create table if not exists public.profiles(
   created_at timestamptz not null default now()
 );
 
--- Ensure columns exist if table was previously created
+-- Ensure columns exist and foreign key constraint is optional
+alter table public.profiles drop constraint if exists profiles_id_fkey;
 alter table public.profiles add column if not exists postal_code text;
 alter table public.profiles add column if not exists address text;
 alter table public.profiles add column if not exists latitude numeric(10,6);

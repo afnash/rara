@@ -16,9 +16,8 @@ alter table public.quotations enable row level security;
 alter table public.invoices enable row level security;
 
 revoke all on all tables in schema public from anon,authenticated;
-grant select on public.services,public.sitter_profiles,public.profiles,public.enquiries,public.quotations,public.invoices,public.pets,public.bookings to anon,authenticated;
-grant insert on public.enquiries to anon,authenticated;
-grant select,insert,update,delete on public.profiles,public.pets,public.bookings,public.availability,public.booking_updates,public.messages,public.reviews,public.enquiries,public.quotations,public.invoices to authenticated;
+grant select, insert, update on public.services,public.sitter_profiles,public.profiles,public.enquiries,public.quotations,public.invoices,public.pets,public.bookings to anon,authenticated;
+grant select,insert,update,delete on public.profiles,public.sitter_profiles,public.pets,public.bookings,public.availability,public.booking_updates,public.messages,public.reviews,public.enquiries,public.quotations,public.invoices to authenticated;
 grant select on public.payments to authenticated;
 grant all on all tables in schema public to service_role;
 
@@ -26,12 +25,21 @@ grant all on all tables in schema public to service_role;
 drop policy if exists profiles_read on public.profiles;
 create policy profiles_read on public.profiles for select to anon,authenticated using(true);
 
+drop policy if exists profiles_insert on public.profiles;
+create policy profiles_insert on public.profiles for insert to anon,authenticated with check(true);
+
 drop policy if exists profiles_update_self on public.profiles;
-create policy profiles_update_self on public.profiles for update to authenticated using(id=(select auth.uid()) or public.is_admin() or true);
+create policy profiles_update_self on public.profiles for update to anon,authenticated using(true);
 
 -- Sitter Profiles Policies
 drop policy if exists sitter_public_read on public.sitter_profiles;
 create policy sitter_public_read on public.sitter_profiles for select to anon,authenticated using(true);
+
+drop policy if exists sitter_profiles_insert on public.sitter_profiles;
+create policy sitter_profiles_insert on public.sitter_profiles for insert to anon,authenticated with check(true);
+
+drop policy if exists sitter_profiles_update on public.sitter_profiles;
+create policy sitter_profiles_update on public.sitter_profiles for update to anon,authenticated using(true);
 
 -- Pets Policies
 drop policy if exists pets_owner_read on public.pets;

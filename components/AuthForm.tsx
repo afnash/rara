@@ -43,22 +43,29 @@ export default function AuthForm({
       const pin = String(form.get('pin')).trim();
 
       const user: DummyUser = { email, password, name, role, pin };
-      const newUserId = 'usr_' + Date.now();
+      const newUserId =
+        typeof crypto !== 'undefined' && crypto.randomUUID
+          ? crypto.randomUUID()
+          : '10000000-0000-4000-8000-' + String(Date.now()).slice(-12).padStart(12, '0');
 
       // Persist new user registration directly into Supabase DB
       try {
         const supabase = createClient();
-        await supabase.from('profiles').insert({
+        const { error: profileErr } = await supabase.from('profiles').insert({
           id: newUserId,
           full_name: name,
           role: role,
           postal_code: pin,
         });
 
+        if (profileErr) {
+          console.warn('Supabase profiles insert notice:', profileErr.message);
+        }
+
         if (role === 'sitter') {
           // New sitters register as UNVERIFIED (verified: false) awaiting Admin Confirmation
-          await supabase.from('sitter_profiles').insert({
-            id: newUserId,
+          const { error: sitterErr } = await supabase.from('sitter_profiles').insert({
+            user_id: newUserId,
             bio: 'Newly registered sitter awaiting Admin confirmation.',
             services: ['Pet sitting', 'Dog walking'],
             hourly_rate: 25,
@@ -66,6 +73,10 @@ export default function AuthForm({
             years_experience: 2,
             verified: false,
           });
+
+          if (sitterErr) {
+            console.warn('Supabase sitter_profiles insert notice:', sitterErr.message);
+          }
         }
       } catch (err) {
         console.warn('Supabase DB registration sync notice:', err);
