@@ -46,9 +46,50 @@ export default function HotspotMap({
   const [activeTab, setActiveTab] = useState<'all' | 'within_radius'>('within_radius');
   const [selectedSpot, setSelectedSpot] = useState<SitterSpot | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
+  const [isLiveTracking, setIsLiveTracking] = useState(false);
+  const [liveCoords, setLiveCoords] = useState<{ lat: number; lng: number; accuracy: number } | null>(null);
 
-  // Compute reference coordinates from search pin or user pin
-  const refCoords = useMemo(() => getCoordsFromPin(searchPin || userPin), [searchPin, userPin]);
+  // Compute reference coordinates from live GPS or search pin or user pin
+  const refCoords = useMemo(() => {
+    if (isLiveTracking && liveCoords) {
+      return {
+        lat: liveCoords.lat,
+        lng: liveCoords.lng,
+        district: 'GPS Live',
+        name: `Live Position (Accuracy ±${liveCoords.accuracy}m)`,
+      };
+    }
+    return getCoordsFromPin(searchPin || userPin);
+  }, [isLiveTracking, liveCoords, searchPin, userPin]);
+
+  // Live GPS tracking listener
+  useEffect(() => {
+    if (!isLiveTracking) return;
+
+    if (typeof window === 'undefined' || !navigator.geolocation) {
+      alert('Geolocation API is not supported in your browser.');
+      setIsLiveTracking(false);
+      return;
+    }
+
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        setLiveCoords({
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          accuracy: Math.round(pos.coords.accuracy),
+        });
+      },
+      (err) => {
+        console.warn('Live GPS error:', err.message);
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 3000 }
+    );
+
+    return () => {
+      navigator.geolocation.clearWatch(watchId);
+    };
+  }, [isLiveTracking]);
 
   // Compute distances for all sitters relative to search center
   const sittersWithDist = useMemo(() => {
@@ -111,25 +152,25 @@ export default function HotspotMap({
         maxZoom: 19,
       }).addTo(map);
 
-      // Custom Center Marker (User PIN location)
+      // Custom Center Marker (User PIN or Live GPS location)
       const centerIcon = L.divIcon({
         className: 'custom-center-marker',
-        html: `<div style="background:#00982d;color:white;padding:6px 12px;border-radius:20px;font-weight:700;font-size:12px;box-shadow:0 4px 12px rgba(0,152,45,0.4);border:2px solid white;display:flex;align-items:center;gap:4px;">
-                <span>📍 Center: ${searchPin || userPin}</span>
+        html: `<div style="background:${isLiveTracking ? '#2563eb' : '#00982d'};color:white;padding:6px 12px;border-radius:20px;font-weight:700;font-size:12px;box-shadow:0 4px 12px rgba(0,0,0,0.3);border:2px solid white;display:flex;align-items:center;gap:4px;">
+                <span>${isLiveTracking ? '📡 Live GPS Position' : `📍 Center: ${searchPin || userPin}`}</span>
                </div>`,
-        iconSize: [140, 36],
-        iconAnchor: [70, 18],
+        iconSize: [150, 36],
+        iconAnchor: [75, 18],
       });
 
       L.marker([refCoords.lat, refCoords.lng], { icon: centerIcon })
         .addTo(map)
-        .bindPopup(`<b>Center Postal Code: ${searchPin || userPin}</b><br/>${refCoords.name} (${refCoords.district})`);
+        .bindPopup(`<b>${isLiveTracking ? 'Live GPS Position' : `Center Postal Code: ${searchPin || userPin}`}</b><br/>${refCoords.name}`);
 
       // 5km Radius Circle boundary
       L.circle([refCoords.lat, refCoords.lng], {
         radius: radiusKm * 1000,
-        color: '#00982d',
-        fillColor: '#00982d',
+        color: isLiveTracking ? '#2563eb' : '#00982d',
+        fillColor: isLiveTracking ? '#3b82f6' : '#00982d',
         fillOpacity: 0.12,
         weight: 2,
         dashArray: '6, 6',
@@ -184,7 +225,6 @@ export default function HotspotMap({
       }
 
       setMapLoaded(true);
-
     }
 
     initLeaflet();
@@ -195,7 +235,7 @@ export default function HotspotMap({
         mapInstance.remove();
       }
     };
-  }, [refCoords, radiusKm, searchPin, userPin, sittersWithDist, parentsWithDist, userRole]);
+  }, [refCoords, radiusKm, searchPin, userPin, sittersWithDist, parentsWithDist, userRole, isLiveTracking]);
 
   return (
     <div className="hotspot-container" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -207,7 +247,10 @@ export default function HotspotMap({
             type="text"
             placeholder="Search by 6-digit Singapore Postal Code (e.g. 238163, 168732)"
             value={searchPin}
-            onChange={(e) => setSearchPin(e.target.value)}
+            onChange={(e) => {
+              setSearchPin(e.target.value);
+              setIsLiveTracking(false);
+            }}
             style={{ padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: '8px', width: '100%', fontSize: '14px' }}
           />
         </div>
@@ -228,13 +271,28 @@ export default function HotspotMap({
           </div>
 
           <button
-            onClick={() => setSearchPin(userPin)}
-            style={{ padding: '6px 12px', background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '13px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+            onClick={() => {
+              setIsLiveTracking(!isLiveTracking);
+            }}
+            style={{
+              padding: '6px 12px',
+              background: isLiveTracking ? '#2563eb' : '#f3f4f6',
+              color: isLiveTracking ? 'white' : '#374151',
+              border: '1px solid #d1d5db',
+              borderRadius: '6px',
+              fontSize: '13px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              fontWeight: '600',
+            }}
           >
-            <Navigation size={14} /> My PIN ({userPin})
+            <Navigation size={14} /> {isLiveTracking ? '📡 Live Tracking ON' : 'Start Live GPS Tracking'}
           </button>
         </div>
       </div>
+
 
       {/* Main Map & Hotspot Sidebar Layout */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: '16px', minHeight: '480px' }} className="hotspot-grid-responsive">

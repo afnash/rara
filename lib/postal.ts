@@ -186,3 +186,69 @@ export function getPinMatch(pin1: string, pin2: string, radiusKm = 5.0) {
     district2: coords2.district,
   };
 }
+
+/**
+ * Fetch live reverse geocoding from Singapore's official SLA OneMap API.
+ * Uses NEXT_PUBLIC_ONEMAP_API_KEY from environment variables if provided.
+ */
+export async function fetchOneMapGeocoding(postalCode: string): Promise<{ lat: number; lng: number; address: string } | null> {
+  try {
+    const apiKey = process.env.NEXT_PUBLIC_ONEMAP_API_KEY;
+    const url = `https://www.onemap.gov.sg/api/common/elastic/search?searchVal=${encodeURIComponent(
+      postalCode
+    )}&returnGeoval=Y&getAddrDetails=Y`;
+
+    const res = await fetch(url, {
+      headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
+    });
+
+    if (!res.ok) return null;
+    const data = await res.json();
+
+    if (data.results && data.results.length > 0) {
+      const first = data.results[0];
+      return {
+        lat: parseFloat(first.LATITUDE),
+        lng: parseFloat(first.LONGITUDE),
+        address: first.ADDRESS || first.BUILDING || 'Singapore Location',
+      };
+    }
+    return null;
+  } catch (err) {
+    console.warn('OneMap API geocoding fallback:', err);
+    return null;
+  }
+}
+
+/**
+ * HTML5 Web Geolocation API for live GPS radius tracking.
+ */
+export function watchLiveLocation(
+  onSuccess: (coords: { lat: number; lng: number; accuracy: number; speed: number | null }) => void,
+  onError?: (error: GeolocationPositionError) => void
+): number | null {
+  if (typeof window === 'undefined' || !navigator.geolocation) {
+    console.warn('Geolocation API is not supported in this browser environment.');
+    return null;
+  }
+
+  return navigator.geolocation.watchPosition(
+    (pos) => {
+      onSuccess({
+        lat: pos.coords.latitude,
+        lng: pos.coords.longitude,
+        accuracy: Math.round(pos.coords.accuracy),
+        speed: pos.coords.speed,
+      });
+    },
+    (err) => {
+      if (onError) onError(err);
+    },
+    {
+      enableHighAccuracy: true,
+      maximumAge: 5000,
+      timeout: 15000,
+    }
+  );
+}
+
